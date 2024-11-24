@@ -1,6 +1,99 @@
 import streamlit as st
+import google.generativeai as genai
+import pandas as pd
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email_validator import validate_email, EmailNotValidError
+import datetime
+import logging
 
-st.title("🎈 My new app")
-st.write(
-    "Let's start building! For help and inspiration, head over to [docs.streamlit.io](https://docs.streamlit.io/)."
-)
+# Configure the API key securely from Streamlit's secrets
+genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger("email")
+
+# Function to send email through Brevo's SMTP server
+def send_email(recipient, subject, body):
+    smtp_server = st.secrets["BREVO_SMTP_SERVER"]
+    smtp_port = st.secrets["BREVO_SMTP_PORT"]
+    sender_email = st.secrets["BREVO_EMAIL"]
+    sender_password = st.secrets["BREVO_PASSWORD"]
+    
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = recipient
+        msg['Subject'] = subject
+
+        msg.attach(MIMEText(body, 'plain'))
+
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.set_debuglevel(1)  # Enable debug output
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, recipient, msg.as_string())
+            server.quit()
+
+        logger.debug(f"Email sent to {recipient}")
+        return True
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        st.error(f"Error: {e}")
+        return False
+
+# Function to generate sales proposal
+def generate_proposal(data):
+    prompt = f"Generate a sales proposal based on the following data: {data.to_dict()}"
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    response = model.generate_content(prompt)
+    return response.text
+
+# Function to log proposals
+def log_proposal(recipient, proposal):
+    with open("proposal_log.txt", "a") as file:
+        file.write(f"Recipient: {recipient}\n")
+        file.write(f"Proposal: {proposal}\n")
+        file.write(f"Date: {datetime.datetime.now()}\n")
+        file.write("-" * 50 + "\n")
+
+# Streamlit App UI
+st.title("Ever AI")
+st.write("Use generative AI to get responses based on your prompt.")
+
+# Upload CSV file
+uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
+    st.write("Uploaded Data:")
+    st.dataframe(df)
+
+    # Email details
+    email_col = st.selectbox("Select email column", df.columns)
+    name_col = st.selectbox("Select name column", df.columns)
+    product_col = st.selectbox("Select product column", df.columns)
+    price_col = st.selectbox("Select price column", df.columns)
+
+    if st.button("Generate and Send Proposals"):
+        for index, row in df.iterrows():
+            recipient = row[email_col]
+            subject = row[product_col]
+            try:
+                validate_email(recipient)
+                proposal = generate_proposal(row)
+                st.write(f"Preview of Proposal for {recipient}:")
+                st.write(proposal)
+                
+                if send_email(recipient, subject, proposal):
+                    log_proposal(recipient, proposal)
+                    st.success(f"Proposal sent to {recipient} successfully!")
+                else:
+                    st.error(f"Failed to send proposal to {recipient}")
+            except EmailNotValidError as e:
+                st.error(f"Invalid email: {recipient} - {e}")
+
+if st.button("View Proposal Log"):
+    with open("proposal_log.txt", "r") as file:
+        st.text(file.read())

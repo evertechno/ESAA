@@ -1,4 +1,5 @@
 streamlit
 google-generativeai 
-brevo 
-pandas
+pandas 
+email-validator
+

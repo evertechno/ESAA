@@ -1,69 +1,24 @@
 import streamlit as st
-import google.generativeai as genai
-import pandas as pd
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import sib_api_v3_sdk
+from sib_api_v3_sdk.rest import ApiException
 from email_validator import validate_email, EmailNotValidError
-import datetime
+import pandas as pd
 import logging
-
-# Configure the API key securely from Streamlit's secrets
-genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("email")
 
-# Function to send email through Brevo's SMTP server
-def send_email(recipient, subject, body):
-    smtp_server = st.secrets["BREVO_SMTP_SERVER"]
-    smtp_port = st.secrets["BREVO_SMTP_PORT"]
-    sender_email = st.secrets["BREVO_EMAIL"]
-    sender_password = st.secrets["BREVO_PASSWORD"]
-    
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = sender_email
-        msg['To'] = recipient
-        msg['Subject'] = subject
-
-        msg.attach(MIMEText(body, 'plain'))
-
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls()
-            server.set_debuglevel(1)  # Enable debug output
-            server.login(sender_email, sender_password)
-            server.sendmail(sender_email, recipient, msg.as_string())
-            server.quit()
-
-        logger.debug(f"Email sent to {recipient}")
-        return True
-    except Exception as e:
-        logger.error(f"Error: {e}")
-        st.error(f"Error: {e}")
-        return False
-
-# Function to generate sales proposal
-def generate_proposal(data):
-    prompt = f"Generate a sales proposal based on the following data: {data.to_dict()}"
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    response = model.generate_content(prompt)
-    return response.text
-
-# Function to log proposals
-def log_proposal(recipient, proposal):
-    with open("proposal_log.txt", "a") as file:
-        file.write(f"Recipient: {recipient}\n")
-        file.write(f"Proposal: {proposal}\n")
-        file.write(f"Date: {datetime.datetime.now()}\n")
-        file.write("-" * 50 + "\n")
+# Brevo API Setup
+api_key = st.secrets["BREVO_API_KEY"]  # Securely fetch the API key from Streamlit secrets
+sib_api_v3_sdk.configuration.api_key['api-key'] = api_key
+api_instance = sib_api_v3_sdk.EmailCampaignsApi()
 
 # Streamlit App UI
-st.title("Ever AI")
-st.write("Use generative AI to get responses based on your prompt.")
+st.title("Bulk Email Campaign via Brevo API")
+st.write("Create and send bulk email campaigns using Brevo's API.")
 
-# Upload CSV file
+# Upload CSV file with email data
 uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
@@ -73,27 +28,54 @@ if uploaded_file:
     # Email details
     email_col = st.selectbox("Select email column", df.columns)
     name_col = st.selectbox("Select name column", df.columns)
-    product_col = st.selectbox("Select product column", df.columns)
-    price_col = st.selectbox("Select price column", df.columns)
+    subject = st.text_input("Email Subject", "Your Sales Proposal")
+    sender_name = st.text_input("Sender Name", "Your Company")
+    sender_email = st.text_input("Sender Email", "your-email@company.com")
+    content = st.text_area("Email Content", "Congratulations! You successfully sent this example campaign via the Brevo API.")
 
-    if st.button("Generate and Send Proposals"):
-        for index, row in df.iterrows():
-            recipient = row[email_col]
-            subject = row[product_col]
-            try:
-                validate_email(recipient)
-                proposal = generate_proposal(row)
-                st.write(f"Preview of Proposal for {recipient}:")
-                st.write(proposal)
-                
-                if send_email(recipient, subject, proposal):
-                    log_proposal(recipient, proposal)
-                    st.success(f"Proposal sent to {recipient} successfully!")
-                else:
-                    st.error(f"Failed to send proposal to {recipient}")
-            except EmailNotValidError as e:
-                st.error(f"Invalid email: {recipient} - {e}")
+    # Create campaign and send emails when button is clicked
+    if st.button("Create and Send Campaign"):
+        try:
+            # Create the Brevo campaign
+            email_campaign = sib_api_v3_sdk.CreateEmailCampaign(
+                name="Bulk Campaign via Brevo API",  # Campaign name
+                subject=subject,  # Campaign subject
+                sender={"name": sender_name, "email": sender_email},  # Sender info
+                type="classic",  # Type of campaign (classic, A/B test, etc.)
+                html_content=content,  # Email content
+                recipients={"listIds": [1]},  # Replace with the list ID of your recipients, if you have predefined lists in Brevo
+            )
 
-if st.button("View Proposal Log"):
-    with open("proposal_log.txt", "r") as file:
-        st.text(file.read())
+            # Create the email campaign using the Brevo API
+            api_response = api_instance.create_email_campaign(email_campaign)
+            st.write(f"Campaign created successfully: {api_response}")
+
+            # Log and send the campaign
+            for index, row in df.iterrows():
+                recipient = row[email_col]
+                try:
+                    validate_email(recipient)
+                    st.write(f"Sending email to {recipient}...")
+                    
+                    # Add your logic to add recipients (you may need to handle list management, e.g. creating lists dynamically in Brevo)
+                    # For now, we're assuming that the list ID is already created in Brevo
+
+                    # You may also add recipients directly like this:
+                    email_data = {
+                        "sender": {"email": sender_email},
+                        "to": [{"email": recipient}],
+                        "subject": subject,
+                        "htmlContent": content,
+                    }
+                    # Sending email via the API (send to one recipient here, but you can extend it to send to many recipients)
+                    api_instance.send_transac_email(email_data)
+                    logger.debug(f"Email sent to {recipient}")
+                    st.success(f"Email sent to {recipient}")
+                except EmailNotValidError as e:
+                    st.error(f"Invalid email: {recipient} - {e}")
+                except ApiException as e:
+                    st.error(f"Error while sending email to {recipient}: {e}")
+
+        except ApiException as e:
+            st.error(f"Exception when calling Brevo API: {e}")
+            logger.error(f"Exception when calling Brevo API: {e}")

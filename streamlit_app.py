@@ -7,11 +7,14 @@ import datetime
 import logging
 from pprint import pprint
 
-# Configure the API key securely from Streamlit's secrets
+# Configure the API key securely from Streamlit's secrets for Google AI
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-# Configure Brevo API key securely from Streamlit's secrets
-sib_api_v3_sdk.configuration.api_key['api-key'] = st.secrets["BREVO_API_KEY"]
+# Set up the API key for Brevo using the correct method
+api_key = st.secrets["BREVO_API_KEY"]
+configuration = sib_api_v3_sdk.Configuration()
+configuration.api_key['api-key'] = api_key
+api_instance = sib_api_v3_sdk.EmailCampaignsApi(sib_api_v3_sdk.ApiClient(configuration))
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -19,8 +22,6 @@ logger = logging.getLogger("email")
 
 # Function to create and send email campaign using Brevo
 def send_email_via_brevo(recipient, subject, body):
-    api_instance = sib_api_v3_sdk.EmailCampaignsApi()
-
     # Define the email campaign settings
     email_campaigns = sib_api_v3_sdk.CreateEmailCampaign(
         name="Sales Proposal Campaign",
@@ -101,4 +102,3 @@ if st.button("View Proposal Log"):
             st.text(file.read())
     except FileNotFoundError:
         st.write("No proposals have been logged yet.")
-

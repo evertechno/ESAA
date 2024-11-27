@@ -96,5 +96,9 @@ if uploaded_file:
                 st.error(f"Invalid email: {recipient} - {e}")
 
 if st.button("View Proposal Log"):
-    with open("proposal_log.txt", "r") as file:
-        st.text(file.read())
+    try:
+        with open("proposal_log.txt", "r") as file:
+            st.text(file.read())
+    except FileNotFoundError:
+        st.write("No proposals have been logged yet.")
+

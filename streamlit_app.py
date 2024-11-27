@@ -1,104 +1,131 @@
 import streamlit as st
 import google.generativeai as genai
 import pandas as pd
-import sib_api_v3_sdk
-from email_validator import validate_email, EmailNotValidError
-import datetime
-import logging
-from pprint import pprint
+import matplotlib.pyplot as plt
+from wordcloud import WordCloud
+import seaborn as sns
+from datetime import datetime
+import random
 
-# Configure the API key securely from Streamlit's secrets for Google AI
+# Configure the API key securely from Streamlit's secrets
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-# Set up the API key for Brevo using the correct method
-api_key = st.secrets["BREVO_API_KEY"]
-configuration = sib_api_v3_sdk.Configuration()
-configuration.api_key['api-key'] = api_key
-api_instance = sib_api_v3_sdk.EmailCampaignsApi(sib_api_v3_sdk.ApiClient(configuration))
+# Dummy user authentication (simple for demo)
+admin_password = "admin123"  # Replace with secure password handling in real applications
 
-# Set up logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger("email")
+# Simulated database of feedback
+feedback_data = []
 
-# Function to create and send email campaign using Brevo
-def send_email_via_brevo(recipient, subject, body):
-    # Define the email campaign settings
-    email_campaigns = sib_api_v3_sdk.CreateEmailCampaign(
-        name="Sales Proposal Campaign",
-        subject=subject,
-        sender={"name": "Your Company", "email": st.secrets["BREVO_EMAIL"]},
-        type="classic",
-        html_content=body,
-        recipients={"emails": [recipient]},
-        scheduled_at=None  # Send immediately, or you can set a schedule here
-    )
+# Simulated predefined categories
+feedback_categories = ['Workplace Environment', 'Workload', 'Management', 'Career Development', 'Other']
 
-    try:
-        api_response = api_instance.create_email_campaign(email_campaigns)
-        logger.debug(f"Email campaign created: {api_response}")
-        return True
-    except sib_api_v3_sdk.rest.ApiException as e:
-        logger.error(f"Exception when creating email campaign: {e}")
-        st.error(f"Error: {e}")
-        return False
+# Store user session for admin login
+if 'admin_logged_in' not in st.session_state:
+    st.session_state.admin_logged_in = False
 
-# Function to generate sales proposal
-def generate_proposal(data, template):
-    prompt = f"Generate a sales proposal based on the following data: {data.to_dict()} and using the template: {template}"
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    response = model.generate_content(prompt)
-    return response.text
+# Admin Login
+def admin_login():
+    st.session_state.admin_logged_in = False
+    password = st.text_input("Enter Admin Password", type="password")
+    if password == admin_password:
+        st.session_state.admin_logged_in = True
+        st.success("Admin logged in successfully.")
+    else:
+        st.error("Incorrect password.")
 
-# Function to log proposals
-def log_proposal(recipient, proposal):
-    with open("proposal_log.txt", "a") as file:
-        file.write(f"Recipient: {recipient}\n")
-        file.write(f"Proposal: {proposal}\n")
-        file.write(f"Date: {datetime.datetime.now()}\n")
-        file.write("-" * 50 + "\n")
+# Feedback Submission Form
+def submit_feedback():
+    with st.form(key='feedback_form'):
+        st.subheader("Submit Your Anonymous Feedback:")
+        feedback = st.text_area("Enter your feedback or survey response:")
+        category = st.selectbox("Select Feedback Category", feedback_categories)
+        submit_button = st.form_submit_button(label="Submit Feedback")
 
-# Streamlit App UI
-st.title("Sales Proposal Generator")
-st.write("Generate and send personalized sales proposals using Generative AI.")
+        if submit_button:
+            if feedback.strip():
+                # Add timestamp and store feedback with category
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                feedback_entry = {"feedback": feedback.strip(), "category": category, "timestamp": timestamp}
+                feedback_data.append(feedback_entry)
+                st.success("Your feedback has been submitted successfully!")
+            else:
+                st.warning("Please enter your feedback before submitting.")
 
-# Confirm that secrets are loaded
-st.write("GOOGLE_API_KEY:", st.secrets["GOOGLE_API_KEY"])
-st.write("BREVO_API_KEY:", st.secrets["BREVO_API_KEY"])
-st.write("BREVO_EMAIL:", st.secrets["BREVO_EMAIL"])
+# Admin Dashboard for Viewing Feedback
+def admin_dashboard():
+    if st.session_state.admin_logged_in:
+        st.title("Admin Dashboard")
+        st.write("View and analyze all feedback submitted by employees.")
 
-# Upload CSV file
-uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    st.write("Uploaded Data:")
-    st.dataframe(df)
+        # Feedback View
+        st.write("### All Submitted Feedback")
+        for idx, entry in enumerate(feedback_data, 1):
+            st.write(f"{idx}. {entry['timestamp']} | Category: {entry['category']} - {entry['feedback']}")
 
-    # Email details
-    email_col = st.selectbox("Select email column", df.columns)
-    subject = st.text_input("Email Subject", "Your Sales Proposal")
-    template = st.text_area("Proposal Template", "Dear [Name],\n\nWe are pleased to present our sales proposal...\n\nBest regards,\n[Company Name]")
+        # Option to filter by category, sentiment, or date
+        filter_category = st.selectbox("Filter Feedback by Category", ['All'] + feedback_categories)
+        if filter_category != 'All':
+            filtered_feedback = [entry for entry in feedback_data if entry['category'] == filter_category]
+        else:
+            filtered_feedback = feedback_data
 
-    if st.button("Generate and Send Proposals"):
-        for index, row in df.iterrows():
-            recipient = row[email_col]
-            try:
-                validate_email(recipient)
-                proposal = generate_proposal(row, template)
-                st.write(f"Preview of Proposal for {recipient}:")
-                st.write(proposal)
+        # Sentiment Visualization
+        sentiment_analysis = [feedback_sentiment_analysis(entry['feedback']) for entry in filtered_feedback]
+        sentiment_df = pd.DataFrame(sentiment_analysis, columns=["Feedback", "Sentiment"])
 
-                # Send email using Brevo API
-                if send_email_via_brevo(recipient, subject, proposal):
-                    log_proposal(recipient, proposal)
-                    st.success(f"Proposal sent to {recipient} successfully!")
-                else:
-                    st.error(f"Failed to send proposal to {recipient}")
-            except EmailNotValidError as e:
-                st.error(f"Invalid email: {recipient} - {e}")
+        sentiment_counts = sentiment_df["Sentiment"].value_counts().reset_index()
+        sentiment_counts.columns = ["Sentiment", "Count"]
 
-if st.button("View Proposal Log"):
-    try:
-        with open("proposal_log.txt", "r") as file:
-            st.text(file.read())
-    except FileNotFoundError:
-        st.write("No proposals have been logged yet.")
+        st.write("### Sentiment Distribution:")
+        fig, ax = plt.subplots()
+        sns.barplot(data=sentiment_counts, x="Sentiment", y="Count", ax=ax)
+        st.pyplot(fig)
+
+        # Export Data as CSV
+        if st.button("Export Feedback Data as CSV"):
+            df = pd.DataFrame(filtered_feedback)
+            df.to_csv("feedback_data.csv", index=False)
+            st.success("CSV file exported successfully.")
+
+# Feedback Sentiment Analysis (Basic)
+def feedback_sentiment_analysis(feedback_text):
+    """
+    Simple sentiment analysis function. In real applications, you could use an API like Google Cloud NLP
+    or other libraries (e.g., TextBlob, Hugging Face models) for more accurate sentiment classification.
+    """
+    if "happy" in feedback_text.lower() or "good" in feedback_text.lower():
+        return feedback_text, "Positive"
+    elif "bad" in feedback_text.lower() or "poor" in feedback_text.lower():
+        return feedback_text, "Negative"
+    else:
+        return feedback_text, "Neutral"
+
+# Main app functionality
+def main():
+    st.title("Employee Survey & Feedback Analysis")
+    st.write("This app collects anonymous feedback from employees and analyzes it using AI.")
+
+    # User role selection (admin or normal user)
+    role = st.radio("Select your role", ["Employee", "Admin"])
+
+    # Employee feedback submission
+    if role == "Employee":
+        submit_feedback()
+
+        # Real-time summary and word cloud
+        if len(feedback_data) > 0:
+            all_feedback_text = ' '.join([entry['feedback'] for entry in feedback_data])
+            wordcloud = WordCloud(width=800, height=400, background_color='white').generate(all_feedback_text)
+            st.write("### Word Cloud of Feedback:")
+            st.image(wordcloud.to_array(), use_column_width=True)
+
+    # Admin login and dashboard
+    elif role == "Admin":
+        if st.session_state.admin_logged_in:
+            admin_dashboard()
+        else:
+            admin_login()
+
+# Run the app
+if __name__ == "__main__":
+    main()

@@ -1,5 +1,8 @@
 streamlit
 google-generativeai 
-pandas 
-email-validator
-sib-api-v3-sdk
+pandas
+matplotlib
+seaborn
+wordcloud
+textblob
+numpy

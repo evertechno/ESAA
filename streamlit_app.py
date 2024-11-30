@@ -5,6 +5,7 @@ from wordcloud import WordCloud
 import seaborn as sns
 from datetime import datetime
 import requests
+import zipfile
 
 # Google API for generative AI (if needed)
 import google.generativeai as genai
@@ -32,12 +33,20 @@ def admin_login():
 
 # Function to download Excel file from OneDrive (public link)
 def download_excel_from_onedrive(url):
-    # Send a GET request to download the file
     response = requests.get(url)
     if response.status_code == 200:
         with open("feedback_data.xlsx", "wb") as f:
             f.write(response.content)
-        return "feedback_data.xlsx"
+        
+        # Check if the downloaded file is a valid zip (Excel .xlsx files are essentially ZIP archives)
+        try:
+            with zipfile.ZipFile("feedback_data.xlsx", 'r') as zip_ref:
+                # If this works, the file is a valid Excel file
+                zip_ref.testzip()
+            return "feedback_data.xlsx"
+        except zipfile.BadZipFile:
+            st.error("Downloaded file is not a valid Excel file.")
+            return None
     else:
         st.error("Failed to download the file from OneDrive.")
         return None
@@ -46,13 +55,18 @@ def download_excel_from_onedrive(url):
 def fetch_feedback_from_excel():
     file_path = download_excel_from_onedrive("https://1drv.ms/x/c/853492AC3BE6B100/ETeglqlBCs1Bm8-VjZkvcQYBg0iknt30kUk9J77vOQo8SQ?e=0Z9vCY")
     if file_path:
-        # Read the Excel file into a DataFrame using openpyxl engine
         try:
-            df = pd.read_excel(file_path, engine="openpyxl")  # Specify engine explicitly
+            # Try reading with openpyxl engine first
+            df = pd.read_excel(file_path, engine="openpyxl")
             return df.to_dict(orient="records")
         except Exception as e:
-            st.error(f"Error reading the Excel file: {e}")
-            return []
+            try:
+                # Fallback to xlrd if openpyxl fails
+                df = pd.read_excel(file_path, engine="xlrd")
+                return df.to_dict(orient="records")
+            except Exception as e:
+                st.error(f"Error reading the Excel file: {e}")
+                return []
     else:
         return []
 

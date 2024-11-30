@@ -1,5 +1,4 @@
 import streamlit as st
-import google.generativeai as genai
 import pandas as pd
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
@@ -42,54 +41,34 @@ def fetch_feedback():
     response = supabase.table("feedback").select("*").execute()
     return response.data
 
-# Create Feedback Table if it doesn't exist
-def create_feedback_table():
-    create_table_sql = """
-    CREATE TABLE IF NOT EXISTS feedback (
-        id SERIAL PRIMARY KEY,
-        feedback TEXT NOT NULL,
-        category TEXT NOT NULL,
-        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-    """
-    response = supabase.postgrest.rpc('sql', {'query': create_table_sql}).execute()
-    if response.status_code != 200:
-        st.error("Failed to create or check table structure.")
-        return False
-    return True
-
 # Feedback Submission Form
 def submit_feedback():
-    # Ensure the feedback table exists
-    if create_feedback_table():
-        with st.form(key='feedback_form'):
-            st.subheader("Submit Your Anonymous Feedback:")
-            feedback = st.text_area("Enter your feedback or survey response:")
-            category = st.selectbox("Select Feedback Category", feedback_categories)
-            submit_button = st.form_submit_button(label="Submit Feedback")
+    with st.form(key='feedback_form'):
+        st.subheader("Submit Your Anonymous Feedback:")
+        feedback = st.text_area("Enter your feedback or survey response:")
+        category = st.selectbox("Select Feedback Category", feedback_categories)
+        submit_button = st.form_submit_button(label="Submit Feedback")
 
-            if submit_button:
-                if feedback.strip():
-                    # Add timestamp and store feedback with category
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    feedback_entry = {"feedback": feedback.strip(), "category": category, "timestamp": timestamp}
+        if submit_button:
+            if feedback.strip():
+                # Add timestamp and store feedback with category
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                feedback_entry = {"feedback": feedback.strip(), "category": category, "timestamp": timestamp}
 
-                    # Insert feedback data into Supabase table
-                    data = {
-                        'feedback': feedback_entry['feedback'],
-                        'category': feedback_entry['category'],
-                        'timestamp': feedback_entry['timestamp']
-                    }
-                    response = supabase.table("feedback").insert(data).execute()
+                # Insert feedback data into Supabase table
+                data = {
+                    'feedback': feedback_entry['feedback'],
+                    'category': feedback_entry['category'],
+                    'timestamp': feedback_entry['timestamp']
+                }
+                response = supabase.table("feedback").insert(data).execute()
 
-                    if response.status_code == 201:
-                        st.success("Your feedback has been submitted successfully!")
-                    else:
-                        st.error(f"Failed to submit feedback: {response.error_message}")
+                if response.status_code == 201:
+                    st.success("Your feedback has been submitted successfully!")
                 else:
-                    st.warning("Please enter your feedback before submitting.")
-    else:
-        st.error("There was an issue with the feedback table setup.")
+                    st.error(f"Failed to submit feedback: {response.error_message}")
+            else:
+                st.warning("Please enter your feedback before submitting.")
 
 # Admin Dashboard for Viewing Feedback
 def admin_dashboard():

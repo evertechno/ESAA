@@ -6,4 +6,4 @@ seaborn
 wordcloud
 textblob
 numpy
-supabase
+openpyxl

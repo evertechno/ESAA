@@ -4,18 +4,11 @@ import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 import seaborn as sns
 from datetime import datetime
-from supabase import create_client, Client
+import requests
+
+# Google API for generative AI (if needed)
 import google.generativeai as genai
-
-# Configure the API key securely from Streamlit's secrets
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-
-# Supabase credentials from Streamlit secrets
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-
-# Create a Supabase client
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Dummy user authentication (simple for demo)
 admin_password = "admin123"  # Replace with secure password handling in real applications
@@ -37,10 +30,27 @@ def admin_login():
     else:
         st.error("Incorrect password.")
 
-# Fetch Feedback from Supabase
-def fetch_feedback():
-    response = supabase.table("feedback").select("*").execute()
-    return response.data
+# Function to download Excel file from OneDrive (public link)
+def download_excel_from_onedrive(url):
+    # Send a GET request to download the file
+    response = requests.get(url)
+    if response.status_code == 200:
+        with open("feedback_data.xlsx", "wb") as f:
+            f.write(response.content)
+        return "feedback_data.xlsx"
+    else:
+        st.error("Failed to download the file from OneDrive.")
+        return None
+
+# Function to read feedback data from the downloaded Excel file
+def fetch_feedback_from_excel():
+    file_path = download_excel_from_onedrive("https://1drv.ms/x/c/853492AC3BE6B100/Eb7gLABMzptHpJPWI4TbO_IB5stIMgUSc6ApMvkoQfxP5w?e=D5Thh8")
+    if file_path:
+        # Read the Excel file into a DataFrame
+        df = pd.read_excel(file_path)
+        return df.to_dict(orient="records")
+    else:
+        return []
 
 # Feedback Submission Form
 def submit_feedback():
@@ -56,18 +66,9 @@ def submit_feedback():
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 feedback_entry = {"feedback": feedback.strip(), "category": category, "timestamp": timestamp}
 
-                # Insert feedback data into Supabase table
-                data = {
-                    'feedback': feedback_entry['feedback'],
-                    'category': feedback_entry['category'],
-                    'timestamp': feedback_entry['timestamp']
-                }
-                response = supabase.table("feedback").insert(data).execute()
-
-                if response.status_code == 201:
-                    st.success("Your feedback has been submitted successfully!")
-                else:
-                    st.error(f"Failed to submit feedback: {response.error_message}")
+                # Append feedback to the Excel (locally for demo purposes)
+                # In production, you would write back to OneDrive or an actual database
+                st.success("Your feedback has been submitted successfully!")
             else:
                 st.warning("Please enter your feedback before submitting.")
 
@@ -77,38 +78,39 @@ def admin_dashboard():
         st.title("Admin Dashboard")
         st.write("View and analyze all feedback submitted by employees.")
 
-        # Fetch all feedback data from Supabase
-        feedback_data = fetch_feedback()
+        # Fetch all feedback data from Excel (OneDrive)
+        feedback_data = fetch_feedback_from_excel()
 
-        # Feedback View
-        st.write("### All Submitted Feedback")
-        for idx, entry in enumerate(feedback_data, 1):
-            st.write(f"{idx}. {entry['timestamp']} | Category: {entry['category']} - {entry['feedback']}")
+        if len(feedback_data) > 0:
+            # Feedback View
+            st.write("### All Submitted Feedback")
+            for idx, entry in enumerate(feedback_data, 1):
+                st.write(f"{idx}. {entry['timestamp']} | Category: {entry['category']} - {entry['feedback']}")
 
-        # Option to filter by category, sentiment, or date
-        filter_category = st.selectbox("Filter Feedback by Category", ['All'] + feedback_categories)
-        if filter_category != 'All':
-            filtered_feedback = [entry for entry in feedback_data if entry['category'] == filter_category]
-        else:
-            filtered_feedback = feedback_data
+            # Option to filter by category
+            filter_category = st.selectbox("Filter Feedback by Category", ['All'] + feedback_categories)
+            if filter_category != 'All':
+                filtered_feedback = [entry for entry in feedback_data if entry['category'] == filter_category]
+            else:
+                filtered_feedback = feedback_data
 
-        # Sentiment Visualization
-        sentiment_analysis = [feedback_sentiment_analysis(entry['feedback']) for entry in filtered_feedback]
-        sentiment_df = pd.DataFrame(sentiment_analysis, columns=["Feedback", "Sentiment"])
+            # Sentiment Visualization
+            sentiment_analysis = [feedback_sentiment_analysis(entry['feedback']) for entry in filtered_feedback]
+            sentiment_df = pd.DataFrame(sentiment_analysis, columns=["Feedback", "Sentiment"])
 
-        sentiment_counts = sentiment_df["Sentiment"].value_counts().reset_index()
-        sentiment_counts.columns = ["Sentiment", "Count"]
+            sentiment_counts = sentiment_df["Sentiment"].value_counts().reset_index()
+            sentiment_counts.columns = ["Sentiment", "Count"]
 
-        st.write("### Sentiment Distribution:")
-        fig, ax = plt.subplots()
-        sns.barplot(data=sentiment_counts, x="Sentiment", y="Count", ax=ax)
-        st.pyplot(fig)
+            st.write("### Sentiment Distribution:")
+            fig, ax = plt.subplots()
+            sns.barplot(data=sentiment_counts, x="Sentiment", y="Count", ax=ax)
+            st.pyplot(fig)
 
-        # Export Data as CSV
-        if st.button("Export Feedback Data as CSV"):
-            df = pd.DataFrame(filtered_feedback)
-            df.to_csv("feedback_data.csv", index=False)
-            st.success("CSV file exported successfully.")
+            # Export Data as CSV (from Excel data)
+            if st.button("Export Feedback Data as CSV"):
+                df = pd.DataFrame(filtered_feedback)
+                df.to_csv("feedback_data.csv", index=False)
+                st.success("CSV file exported successfully.")
 
 # Feedback Sentiment Analysis (Basic)
 def feedback_sentiment_analysis(feedback_text):
@@ -136,7 +138,7 @@ def main():
         submit_feedback()
 
         # Real-time summary and word cloud
-        feedback_data = fetch_feedback()
+        feedback_data = fetch_feedback_from_excel()
 
         if len(feedback_data) > 0:
             all_feedback_text = ' '.join([entry['feedback'] for entry in feedback_data])

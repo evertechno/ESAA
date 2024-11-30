@@ -6,7 +6,6 @@ from wordcloud import WordCloud
 import seaborn as sns
 from datetime import datetime
 from supabase import create_client, Client
-import random
 
 # Configure the API key securely from Streamlit's secrets
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
@@ -37,6 +36,11 @@ def admin_login():
         st.success("Admin logged in successfully.")
     else:
         st.error("Incorrect password.")
+
+# Fetch Feedback from Supabase
+def fetch_feedback():
+    response = supabase.table("feedback").select("*").execute()
+    return response.data
 
 # Feedback Submission Form
 def submit_feedback():
@@ -74,8 +78,7 @@ def admin_dashboard():
         st.write("View and analyze all feedback submitted by employees.")
 
         # Fetch all feedback data from Supabase
-        response = supabase.table("feedback").select("*").execute()
-        feedback_data = response.data
+        feedback_data = fetch_feedback()
 
         # Feedback View
         st.write("### All Submitted Feedback")
@@ -133,6 +136,8 @@ def main():
         submit_feedback()
 
         # Real-time summary and word cloud
+        feedback_data = fetch_feedback()
+
         if len(feedback_data) > 0:
             all_feedback_text = ' '.join([entry['feedback'] for entry in feedback_data])
             wordcloud = WordCloud(width=800, height=400, background_color='white').generate(all_feedback_text)

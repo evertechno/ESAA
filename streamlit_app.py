@@ -5,6 +5,7 @@ from wordcloud import WordCloud
 import seaborn as sns
 from datetime import datetime
 from supabase import create_client, Client
+import google.generativeai as genai
 
 # Configure the API key securely from Streamlit's secrets
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])

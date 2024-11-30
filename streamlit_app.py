@@ -6,6 +6,7 @@ import seaborn as sns
 from datetime import datetime
 import requests
 import zipfile
+import os
 
 # Google API for generative AI (if needed)
 import google.generativeai as genai
@@ -38,15 +39,11 @@ def download_excel_from_onedrive(url):
         with open("feedback_data.xlsx", "wb") as f:
             f.write(response.content)
         
-        # Check if the downloaded file is a valid zip (Excel .xlsx files are essentially ZIP archives)
-        try:
-            with zipfile.ZipFile("feedback_data.xlsx", 'r') as zip_ref:
-                # If this works, the file is a valid Excel file
-                zip_ref.testzip()
-            return "feedback_data.xlsx"
-        except zipfile.BadZipFile:
-            st.error("Downloaded file is not a valid Excel file.")
+        # Check if the file size is reasonable (for example, 1KB minimum for an Excel file)
+        if os.path.getsize("feedback_data.xlsx") < 1024:
+            st.error("Downloaded file is too small, it might be corrupted.")
             return None
+        return "feedback_data.xlsx"
     else:
         st.error("Failed to download the file from OneDrive.")
         return None
@@ -60,13 +57,8 @@ def fetch_feedback_from_excel():
             df = pd.read_excel(file_path, engine="openpyxl")
             return df.to_dict(orient="records")
         except Exception as e:
-            try:
-                # Fallback to xlrd if openpyxl fails
-                df = pd.read_excel(file_path, engine="xlrd")
-                return df.to_dict(orient="records")
-            except Exception as e:
-                st.error(f"Error reading the Excel file: {e}")
-                return []
+            st.error(f"Error reading the Excel file using openpyxl: {e}")
+            return []
     else:
         return []
 

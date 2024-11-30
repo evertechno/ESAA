@@ -5,16 +5,21 @@ import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 import seaborn as sns
 from datetime import datetime
+from supabase import create_client, Client
 import random
 
 # Configure the API key securely from Streamlit's secrets
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
+# Supabase credentials from Streamlit secrets
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+
+# Create a Supabase client
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 # Dummy user authentication (simple for demo)
 admin_password = "admin123"  # Replace with secure password handling in real applications
-
-# Simulated database of feedback
-feedback_data = []
 
 # Simulated predefined categories
 feedback_categories = ['Workplace Environment', 'Workload', 'Management', 'Career Development', 'Other']
@@ -46,8 +51,19 @@ def submit_feedback():
                 # Add timestamp and store feedback with category
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 feedback_entry = {"feedback": feedback.strip(), "category": category, "timestamp": timestamp}
-                feedback_data.append(feedback_entry)
-                st.success("Your feedback has been submitted successfully!")
+
+                # Insert feedback data into Supabase table
+                data = {
+                    'feedback': feedback_entry['feedback'],
+                    'category': feedback_entry['category'],
+                    'timestamp': feedback_entry['timestamp']
+                }
+                response = supabase.table("feedback").insert(data).execute()
+
+                if response.status_code == 201:
+                    st.success("Your feedback has been submitted successfully!")
+                else:
+                    st.error(f"Failed to submit feedback: {response.error_message}")
             else:
                 st.warning("Please enter your feedback before submitting.")
 
@@ -56,6 +72,10 @@ def admin_dashboard():
     if st.session_state.admin_logged_in:
         st.title("Admin Dashboard")
         st.write("View and analyze all feedback submitted by employees.")
+
+        # Fetch all feedback data from Supabase
+        response = supabase.table("feedback").select("*").execute()
+        feedback_data = response.data
 
         # Feedback View
         st.write("### All Submitted Feedback")

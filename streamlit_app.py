@@ -46,9 +46,13 @@ def download_excel_from_onedrive(url):
 def fetch_feedback_from_excel():
     file_path = download_excel_from_onedrive("https://1drv.ms/x/c/853492AC3BE6B100/Eb7gLABMzptHpJPWI4TbO_IB5stIMgUSc6ApMvkoQfxP5w?e=D5Thh8")
     if file_path:
-        # Read the Excel file into a DataFrame
-        df = pd.read_excel(file_path)
-        return df.to_dict(orient="records")
+        # Read the Excel file into a DataFrame using openpyxl engine
+        try:
+            df = pd.read_excel(file_path, engine="openpyxl")  # Specify engine explicitly
+            return df.to_dict(orient="records")
+        except Exception as e:
+            st.error(f"Error reading the Excel file: {e}")
+            return []
     else:
         return []
 
